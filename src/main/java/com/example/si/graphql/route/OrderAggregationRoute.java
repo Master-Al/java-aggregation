@@ -5,10 +5,13 @@ import com.example.si.graphql.camel.OrderAggregationStrategy;
 import com.example.si.graphql.service.InventoryLookupService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
 import org.apache.camel.builder.RouteBuilder;
 
 @ApplicationScoped
 public class OrderAggregationRoute extends RouteBuilder {
+
+    private static final Logger LOG = Logger.getLogger(OrderAggregationRoute.class);
 
     @Inject
     InventoryLookupService inventoryLookupService;
@@ -21,7 +24,9 @@ public class OrderAggregationRoute extends RouteBuilder {
         from("seda:aggregate-order")
                 .routeId("aggregate-order-route")
                 .process(exchange -> {
+                    // Prepare headers once so every split message carries the same order context.
                     AggregationRequest request = exchange.getMessage().getBody(AggregationRequest.class);
+                    LOG.infof("Preparing Camel exchange for order %s", request.getRequestId());
                     exchange.getMessage().setHeader("requestId", request.getRequestId());
                     exchange.getMessage().setHeader("customerId", request.getCustomerId());
                     exchange.getMessage().setHeader("expectedItemCount", request.getItemIds().size());
@@ -29,8 +34,10 @@ public class OrderAggregationRoute extends RouteBuilder {
                 })
                 .split(body(), orderAggregationStrategy).parallelProcessing()
                     .process(exchange -> {
+                        // Resolve each item independently before the aggregation strategy folds them back together.
                         String itemId = exchange.getMessage().getBody(String.class);
                         String customerId = exchange.getMessage().getHeader("customerId", String.class);
+                        LOG.infof("Looking up item %s for customer %s", itemId, customerId);
                         exchange.getMessage().setBody(inventoryLookupService.lookupItem(itemId, customerId));
                     })
                 .end();

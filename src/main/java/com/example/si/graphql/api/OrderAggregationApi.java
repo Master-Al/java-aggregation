@@ -5,6 +5,7 @@ import com.example.si.graphql.model.AggregationResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.ProducerTemplate;
+import org.jboss.logging.Logger;
 import org.eclipse.microprofile.graphql.Description;
 import org.eclipse.microprofile.graphql.GraphQLApi;
 import org.eclipse.microprofile.graphql.Name;
@@ -16,6 +17,7 @@ import java.util.List;
 @ApplicationScoped
 public class OrderAggregationApi {
 
+    private static final Logger LOG = Logger.getLogger(OrderAggregationApi.class);
     private static final String AGGREGATE_ENDPOINT = "seda:aggregate-order?waitForTaskToComplete=Always";
 
     @Inject
@@ -28,7 +30,12 @@ public class OrderAggregationApi {
             @Name("customerId") String customerId,
             @Name("itemIds") List<String> itemIds) {
 
+        // Convert the GraphQL input into the message shape expected by the Camel route.
         AggregationRequest request = new AggregationRequest(orderId, customerId, itemIds);
-        return producerTemplate.requestBody(AGGREGATE_ENDPOINT, request, AggregationResult.class);
+        LOG.infof("Received GraphQL aggregation request for order %s with %d items", orderId, itemIds.size());
+
+        AggregationResult result = producerTemplate.requestBody(AGGREGATE_ENDPOINT, request, AggregationResult.class);
+        LOG.infof("Returning aggregated response for order %s with overall status %s", orderId, result.getOverallStatus());
+        return result;
     }
 }
